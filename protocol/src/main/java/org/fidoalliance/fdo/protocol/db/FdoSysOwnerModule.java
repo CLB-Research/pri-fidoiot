@@ -56,6 +56,7 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
 
   private final LoggerService logger = new LoggerService(FdoSysOwnerModule.class);
   private String fetchFileName;
+  private int currentInstructionIndex = 0;
 
   private final ProcessBuilder.Redirect execOutputRedirect = ProcessBuilder.Redirect.PIPE;
   private final Duration execTimeout = Duration.ofHours(2);
@@ -70,6 +71,7 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
   @Override
   public void prepare(ServiceInfoModuleState state) throws IOException {
     state.setExtra(AnyType.fromObject(new FdoSysModuleExtra()));
+    currentInstructionIndex = 0;
   }
 
   @Override
@@ -153,11 +155,6 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
 
     FdoSysModuleExtra extra = state.getExtra().covertValue(FdoSysModuleExtra.class);
 
-    if (!extra.isLoaded() && infoReady(extra)) {
-      load(state, extra);
-      extra.setLoaded(true);
-    }
-
     while (state.getGlobalState().getQueue().size() > 0) {
       boolean sent = sendFunction.apply(state.getGlobalState().getQueue().peek());
       if (sent) {
@@ -172,6 +169,11 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
         break;
       }
     }
+    
+    if (!extra.isWaiting()) {
+      load_next(state, extra);
+    }
+
     if (state.getGlobalState().getQueue().size() == 0 && !extra.isWaiting()) {
       state.setDone(true);
     }
@@ -257,7 +259,7 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
     logger.info("EOT:resultCode " + result.getResult());
   }
 
-  protected void load(ServiceInfoModuleState state, FdoSysModuleExtra extra)
+  protected void load_next(ServiceInfoModuleState state, FdoSysModuleExtra extra)
       throws IOException {
 
     if (!state.isActive()) {
@@ -270,10 +272,12 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
               Mapper.INSTANCE.readJsonValue(document.getInstructions(), FdoSysInstruction[].class);
 
       boolean skip = false;
-      for (int i = 0; i < instructions.length; i++) {
-
+      if (currentInstructionIndex < instructions.length) {
+        int i = currentInstructionIndex;
+        currentInstructionIndex++;
+        
         if (!checkProvider(instructions[i])) {
-          continue;
+          return;
         }
 
         if (instructions[i].getFilter() != null) {
@@ -281,7 +285,7 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
         }
         if (skip) {
           document.setIndex(i);
-          continue;
+          return;
         }
 
         document.setIndex(i);
@@ -295,9 +299,7 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
           getFetch(state, extra, instructions[i]);
         } else if (instructions[i].getOwnerExec() != null) {
           getOwnerExec(state, extra, instructions[i]);
-        } else {
-          break;
-        }
+        } 
       }
     }
 
@@ -314,9 +316,15 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
   protected void getExec(ServiceInfoModuleState state,
       FdoSysModuleExtra extra,
       FdoSysInstruction instruction) throws IOException {
+
+    String[] args = instruction.getExecArgs();
+    for (int i = 0; i < args.length; i++) {
+      args[i] = args[i].replace("$(guid)", state.getGuid().toString());
+    }
+        
     ServiceInfoKeyValuePair kv = new ServiceInfoKeyValuePair();
     kv.setKeyName(FdoSys.EXEC);
-    kv.setValue(Mapper.INSTANCE.writeValue(instruction.getExecArgs()));
+    kv.setValue(Mapper.INSTANCE.writeValue(args));
     state.getGlobalState().getQueue().add(kv);
   }
 
@@ -326,7 +334,15 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
 
 
     String[] args = instruction.getOwnerExec();
+    for (int i = 0; i < args.length; i++) {
+      args[i] = args[i].replace("$(guid)", state.getGuid().toString());
+    }
+
     exec(args);
+
+    if (!extra.isWaiting()) {
+      load_next(state, extra);
+    }
   }
 
   protected void getExecCb(ServiceInfoModuleState state,
@@ -522,6 +538,7 @@ public class FdoSysOwnerModule implements ServiceInfoModule {
     state.getGlobalState().getQueue().add(kv);
 
     String resource = instruction.getResource();
+    resource = resource.replace("$(guid)", state.getGuid().toString());
     if (resource.startsWith("https://") || resource.startsWith("http://")) {
       getUrlFile(state, extra, instruction);
     } else {
