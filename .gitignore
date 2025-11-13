@@ -24,3 +24,7 @@ pom.xml.versionsBackup
 target/
 *.jar
 config.properties
+component-samples/demo/*/lib/*.pom
+protocol/src/test/resources/credentials.bin
+protocol/src/test/resources/owner_pub_key
+protocol/app-data
