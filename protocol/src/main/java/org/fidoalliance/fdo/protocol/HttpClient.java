@@ -101,9 +101,13 @@ public abstract class HttpClient implements Runnable {
     }
     HttpInstruction httpInstruction = null;
     long delay = 0L;
-    while (index < getInstructions().size()) {
+    while (index <= getInstructions().size()) {
 
       try (CloseableHttpClient httpClient = Config.getWorker(HttpClientSupplier.class).get()) {
+
+        if (index >= getInstructions().size()) {
+          throw new IOException("All instructions tried.");
+        }
 
         MsgType msgId = getRequest().getMsgType();
         httpInstruction = getInstructions().get(index);
