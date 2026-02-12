@@ -106,7 +106,7 @@ public abstract class HttpClient implements Runnable {
       try (CloseableHttpClient httpClient = Config.getWorker(HttpClientSupplier.class).get()) {
 
         if (index >= getInstructions().size()) {
-          throw new IOException("All instructions tried.");
+          throw new IOException("All instructions failed.");
         }
 
         MsgType msgId = getRequest().getMsgType();
